@@ -37,11 +37,7 @@ def usage(message):
         # find conflicts in hadoop class path using the shell special `command` notation
         $ classfind.py  `hadoop classpath`
         # find specific class - note - case insensitive
-        $ classfind.py  -s s3file `hadoop classpath` $SPARK_HOME/lib
-
-
-
-        You can also use `hadoop classpah` as parameter - it is split by ':'""" % message
+        $ classfind.py  -s s3file `hadoop classpath` $SPARK_HOME/lib""" % message
 
 # Accept paths arg with the following opeion examples:
 # 1. arg="file1.jar"  - yield only this (if matching pat)
@@ -111,21 +107,25 @@ def main(argv):
                     print class_name
                 class_index.setdefault(class_name, []).append(file)
     # print conflicts:
+    conflict_count = 0
     for name, files in class_index.iteritems():
         if find_substring:
-            if name.lower().find(find_substring) >= 0:
-                print "found: class {} appears in files:\n\t{}".format(name, "\n\t".join(files))
-        else:
-            # if not defined find string - print all conflicts
-            if len(files) > 1:
-                versions = set()
-                for f in files:
-                    nopath = os.path.basename(f)
-                    versions.add(nopath)
-                print "duplicate: class {} appears in files:\n\t{}".format(name, "\n\t".join(files))
-                if len(versions) > 1:
-                    print "CONFLICT: class {} different versions in path {}".format(name, ";".join(versions))
+            if name.lower().find(find_substring) < 0:
+                continue  # not found
+            print "found: class {} appears in files:\n\t{}".format(name, "\n\t".join(files))
 
+        # if not defined find string - print all conflicts
+        if len(files) > 1:
+            versions = set()
+            for f in files:
+                nopath = os.path.basename(f)
+                versions.add(nopath)
+            print "duplicate: class {} appears in files:\n\t{}".format(name, "\n\t".join(files))
+            if len(versions) > 1:
+                conflict_count += 1
+                print "CONFLICT: class {} different versions in path {}".format(name, ";".join(versions))
+    if conflict_count > 0:
+        print "CONFLICT: total ", conflict_count
 
 
 if __name__ == '__main__':
