@@ -34,4 +34,21 @@ duplicate: class org.apache.commons.beanutils.ConvertUtils appears in files:
 	/usr/local/hadoop/share/hadoop/common/lib/commons-beanutils-1.7.0.jar
 ```
 
+## awsutil
+Functions to wrap around AWS CLI and handle EC2 instances
+For example:
+
+```
+import awsutil
+
+awsutil.setDefault('region', 'eu-west-1')
+
+def ListInstances():
+    for inst in awsutil.IterInstances():
+        print "instance {0}: ip: {1}  tags: {2} state: {3}".format(inst.id, inst.pub_ip, str(inst.tags_dict), inst.state)
+
+ListInstances()
+
+```
+
 
