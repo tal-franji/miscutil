@@ -17,7 +17,8 @@ Help find Java class in a list of jars or paths
         # find specific class - note - case insensitive
         $ classfind.py  -s s3file `hadoop classpath` $SPARK_HOME/lib
 
-#Output
+###Output
+
 ```<pre>
 $ classfind.py /usr/local/hadoop/share/hadoop/common/lib/ /usr/local/hadoop/share/hadoop/yarn/lib/
 
