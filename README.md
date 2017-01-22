@@ -19,7 +19,7 @@ Help find Java class in a list of jars or paths
 
 ###Output
 
-```<pre>
+
 $ classfind.py /usr/local/hadoop/share/hadoop/common/lib/ /usr/local/hadoop/share/hadoop/yarn/lib/
 
 duplicate: class org.apache.commons.beanutils.converters.ShortConverter appears in files:
@@ -32,6 +32,6 @@ duplicate: class org.apache.commons.beanutils.locale.LocaleConvertUtils appears 
 CONFLICT: class org.apache.commons.beanutils.locale.LocaleConvertUtils different versions in path commons-beanutils-1.7.0.jar;commons-beanutils-core-1.8.0.jar
 duplicate: class org.apache.commons.beanutils.ConvertUtils appears in files:
 	/usr/local/hadoop/share/hadoop/common/lib/commons-beanutils-1.7.0.jar
-</pre>```
+
 
 
