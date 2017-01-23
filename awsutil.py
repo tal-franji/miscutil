@@ -3,6 +3,8 @@
 # NO LICENCE , NO LIABILITIES
 # this is FREE and you are allowed to copy, change, slice  it - do whatever you want
 # this was written to Amazon Linux/CentOS
+# You can find the latest version at:
+# https://github.com/tal-franji/miscutil/blob/master/awsutil.py
 __author__ = "tal.franji@gmail.com"
 
 
