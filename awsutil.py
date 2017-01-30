@@ -56,7 +56,7 @@ def PSystem(cmd_template, params):
 
 # add --key=value to the command based on params dict
 # return parsed json result
-def AwsSystem(cmd_head, params, useDefaultForNone):
+def AwsSystem(cmd_head, params, useDefaultForNone=True):
     # ignore params where value is None
     effective_params = dict()
     for k,v in params.iteritems():
@@ -102,7 +102,7 @@ def InstanceOfTagValue(tag, value):
 def CreateInstanceIfNotExist(singelton_tag_name=None,singelton_tag_value=None,
                              iam_instance_profile=None, snapshot_volume = None, ami = None,
                            tags={}, key_pair=None, security_group = None,
-                          instance_type=None):
+                          instance_type=None, extra_params={}):
     if singelton_tag_name:
         instance = InstanceOfTagValue(singelton_tag_name, singelton_tag_value)
         if instance:
@@ -114,13 +114,12 @@ def CreateInstanceIfNotExist(singelton_tag_name=None,singelton_tag_value=None,
     tags[singelton_tag_name] = singelton_tag_value
     CreateInstance(iam_instance_profile=iam_instance_profile, snapshot_volume=snapshot_volume, ami=ami,
                           tags=tags, key_pair=key_pair, security_group=security_group,
-                          instance_type=instance_type)
+                          instance_type=instance_type, extra_params=extra_params)
 
 
 def CreateInstance(iam_instance_profile=None, snapshot_volume=None, ami=None,
                           tags={}, key_pair=None, security_group=None,
-                          instance_type=None):
-    "--block-device-mappings file://mapping.json"
+                          instance_type=None, extra_params={}):
     block_device_mapping = None
     if snapshot_volume:
         tmpjson = "/tmp/tmp.json"
@@ -140,19 +139,16 @@ def CreateInstance(iam_instance_profile=None, snapshot_volume=None, ami=None,
         print "ERROR - missing key-pair"
         return
 
-    availability_zone = None
-    if getDefault('region'):
-        availability_zone = getDefault('region') + 'a'
-    params = {'ami': ami,
+    params = {'image-id': ami,
               'instance-type': instance_type,
-              'key-pair': key_pair,
-              'AvailabilityZone': availability_zone,
+              'key-name': key_pair,
               'region': None,
-              'iam-instance-profile': iam_instance_profile,
               'block-device-mappings': block_device_mapping,
               'security_group': security_group,
               }
-    j = AwsSystem("aws ec2 run-instances", params, True)
+    if isinstance(extra_params, dict):
+        params.update(extra_params)
+    j = AwsSystem("aws ec2 run-instances", params)
     instance_id = j.get("Instances", [{}])[0].get("InstanceId", None)
     if not instance_id:
         print "ERROR - bad response", str(j)
@@ -164,7 +160,7 @@ def CreateInstance(iam_instance_profile=None, snapshot_volume=None, ami=None,
     params = {'resources': instance_id,'region': None}
     for k, v in tags.iteritems():
         params['tags'] = '"Key=%s,Value=%s"' % (k,v)
-        AwsSystem(cmd, params, True)
+        AwsSystem(cmd, params)
 
     #tags_flag =  " ".join(['--tags "Key=%s,Value=%s"' % (k,v) for k, v in tags.iteritems()])
     #cmd = 'aws ec2 create-tags ' + tags_flag
@@ -196,7 +192,7 @@ def IterInstances(instance_id=None):
         instances = reserve.get("Instances", [])
         for inst in instances:
             info = InstanceInfo(inst)
-            if info.state == 'terminated':
+            if info.state in ['terminated', 'stopped']:
                 continue
             yield info
 
@@ -221,7 +217,7 @@ def ListInstances():
 def DescribeInstance(instance_id):
     cmd = "aws ec2 describe-instance-status"
     params = {'instance-id': instance_id, 'region': None}
-    return AwsSystem(cmd, params, True)
+    return AwsSystem(cmd, params)
 
 def SSHInstance(instance_id, pem_ppk_file):
     if sys.platform == "win32":
