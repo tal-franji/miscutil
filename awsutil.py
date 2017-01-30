@@ -99,10 +99,7 @@ def InstanceOfTagValue(tag, value):
     return None
 
 
-def CreateInstanceIfNotExist(singelton_tag_name=None,singelton_tag_value=None,
-                             iam_instance_profile=None, snapshot_volume = None, ami = None,
-                           tags={}, key_pair=None, security_group = None,
-                          instance_type=None, extra_params={}):
+def CreateInstanceIfNotExist(tags={},singelton_tag_name=None,singelton_tag_value=None, **kwargs):
     if singelton_tag_name:
         instance = InstanceOfTagValue(singelton_tag_name, singelton_tag_value)
         if instance:
@@ -112,15 +109,18 @@ def CreateInstanceIfNotExist(singelton_tag_name=None,singelton_tag_value=None,
     if 'Name' not in tags:
         tags['Name'] = singelton_tag_value
     tags[singelton_tag_name] = singelton_tag_value
-    CreateInstance(iam_instance_profile=iam_instance_profile, snapshot_volume=snapshot_volume, ami=ami,
-                          tags=tags, key_pair=key_pair, security_group=security_group,
-                          instance_type=instance_type, extra_params=extra_params)
+    CreateInstance(tags=tags, **kwargs)
 
+def UnderscoreToHyphen(key_val):
+    res = {}
+    for k,v in key_val.iteritems():
+        k2 = k.replace("_", "-")
+        res[k2] = v
+    return res
 
-def CreateInstance(iam_instance_profile=None, snapshot_volume=None, ami=None,
-                          tags={}, key_pair=None, security_group=None,
-                          instance_type=None, extra_params={}):
+def CreateInstance(tags={}, **kwargs):
     block_device_mapping = None
+    snapshot_volume = kwargs.get('snapshot_volume')
     if snapshot_volume:
         tmpjson = "/tmp/tmp.json"
         with open(tmpjson, "w+t") as f:
@@ -135,19 +135,16 @@ def CreateInstance(iam_instance_profile=None, snapshot_volume=None, ami=None,
                 ]
             """ % snapshot_volume)
         block_device_mapping = "file://" + tmpjson
-    if not key_pair:
+    key_name = kwargs.get('key_name')
+    if not key_name:
         print "ERROR - missing key-pair"
         return
-
-    params = {'image-id': ami,
-              'instance-type': instance_type,
-              'key-name': key_pair,
+    args = UnderscoreToHyphen(kwargs)
+    params = {
               'region': None,
               'block-device-mappings': block_device_mapping,
-              'security_group': security_group,
               }
-    if isinstance(extra_params, dict):
-        params.update(extra_params)
+    params.update(args)
     j = AwsSystem("aws ec2 run-instances", params)
     instance_id = j.get("Instances", [{}])[0].get("InstanceId", None)
     if not instance_id:
