@@ -240,7 +240,12 @@ def SSHInstanceWin32(instance_id, ppk_file):
         print "ERROR - no pem file found : ", ppk_file
         exit(3)
     for port in ports:
-        lflag += " -L %d:%s:%d" % (port, instance.pub_ip, port)
+        if isinstance(port, tuple):
+            src_port, dst_port = port
+        else:
+            src_port = port
+            dst_port = port
+        lflag += " -L %d:%s:%d" % (src_port, instance.pub_ip, dst_port)
     System("\"%s\" -ssh -l %s -i %s %s %s"% (putty, getDefault('ec2-username'), ppk_file, instance.pub_ip, lflag))
 
 
