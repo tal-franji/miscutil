@@ -276,4 +276,47 @@ def SCPInstances(instance_id, pem_file, src, dst):
     System("scp -i %s %s@%s:%s" % (pem_file,src, getDefault('ec2-username'), instance.pub_ip, dst))
 
 
+## EMR
+
+def FindEMRClusterByNameTag(cluster_name):
+    """Find cluster id by the value of the Name tag"""
+    cmd = 'aws emr list-clusters'
+    j = AwsSystem(cmd, {'region': None}, True)
+    if not j:
+        return None
+    for c in j.get("Clusters", [{}]):
+        state = c.get("Status", {}).get("State")
+        if state in ['TERMINATING', 'TERMINATED', 'TERMINATED_WITH_ERRORS']:
+            continue
+        id = c.get("Id")
+        name = c.get("Name")
+        if name == cluster_name:
+            return id
+    return None
+
+def DescribeEMRCluster(cluster_id):
+    if not cluster_id:
+        return None
+    return AwsSystem("aws emr describe-cluster", {'cluster-id' : cluster_id, 'region': None})
+
+
+def FindEMRClusterMasterInstance(cluster_id):
+    if not cluster_id:
+        return None
+    j = AwsSystem("aws emr describe-cluster", {'cluster-id' : cluster_id, 'region': None})
+    igroups = j.get("Cluster",{}).get("InstanceGroups",[])
+    master_instance_group = None
+    for ig in igroups:
+        if ig.get("Name", "").lower().startswith("master"):
+            master_instance_group = ig.get("Id")
+    if not master_instance_group:
+        return None
+    j = AwsSystem("aws emr list-instances", {'cluster-id' : cluster_id, 'region': None}, True)
+    master_instance = None
+    for i in j.get("Instances", []):
+        if i.get("InstanceGroupId") == master_instance_group:
+            master_instance = i.get("Ec2InstanceId")
+            break
+    return master_instance
+
 
