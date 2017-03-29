@@ -299,6 +299,20 @@ def DescribeEMRCluster(cluster_id):
         return None
     return AwsSystem("aws emr describe-cluster", {'cluster-id' : cluster_id, 'region': None})
 
+def ShowEMRCluster(cluster_id):
+    """print Cluster status - human readable for DescribeEMRCluster result"""
+    j = DescribeEMRCluster(cluster_id)
+    if not j:
+        print "ERROR - Cluster not found"
+        return
+    status = j.get('Cluster',{}).get('Status', {})
+    name = j.get('Cluster',{}).get('Name', "UNKNOWN")
+    state = status.get('State', "UNKNOWN")
+    message = status.get('StateChangeReason', {}).get('Message', "")
+    print "Showing cluster named ", name
+    print "Cluster status: ", state
+    print message
+
 
 def FindEMRClusterMasterInstance(cluster_id):
     if not cluster_id:
