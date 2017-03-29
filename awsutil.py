@@ -307,6 +307,11 @@ def DescribeEMRCluster(cluster_id):
         return None
     return AwsSystem("aws emr describe-cluster", {'cluster-id' : cluster_id, 'region': None})
 
+def TerminateEMRCluster(cluster_id):
+    if not cluster_id:
+        return None
+    return AwsSystem("aws emr terminate-clusters", {'cluster-ids' : cluster_id, 'region': None})
+
 
 def FindEMRClusterMasterInstance(cluster_id):
     if not cluster_id:
