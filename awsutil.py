@@ -262,7 +262,11 @@ def SSHInstanceUnix(instance_id, pem_file):
         exit(3)
     for port in ports:
         lflag += " -L %d:%s:%d" % (port, instance.pub_ip, port)
-    System("ssh -i %s %s@%s %s"% (pem_file, getDefault('ec2-username'), instance.pub_ip, lflag))
+    i_flag = ""
+    if pem_file:
+        # pem file may be None if running from a machine with IAM role
+        i_flag = "-i %s" % pem_file
+    System("ssh %s %s@%s %s"% (i_flag, getDefault('ec2-username'), instance.pub_ip, lflag))
 
 # ssh to instance from laptop - this does NOT work on Windows
 def SCPInstances(instance_id, pem_file, src, dst):
@@ -273,7 +277,11 @@ def SCPInstances(instance_id, pem_file, src, dst):
     if not pem_file or not os.path.exists(pem_file):
         print "ERROR - no pem file found : ", pem_file
         exit(3)
-    System("scp -i %s %s@%s:%s" % (pem_file,src, getDefault('ec2-username'), instance.pub_ip, dst))
+    i_flag = ""
+    if pem_file:
+        # pem file may be None if running from a machine with IAM role
+        i_flag = "-i %s" % pem_file
+    System("scp %s %s@%s:%s" % (i_flag, src, getDefault('ec2-username'), instance.pub_ip, dst))
 
 
 ## EMR
@@ -299,20 +307,6 @@ def DescribeEMRCluster(cluster_id):
         return None
     return AwsSystem("aws emr describe-cluster", {'cluster-id' : cluster_id, 'region': None})
 
-def ShowEMRCluster(cluster_id):
-    """print Cluster status - human readable for DescribeEMRCluster result"""
-    j = DescribeEMRCluster(cluster_id)
-    if not j:
-        print "ERROR - Cluster not found"
-        return
-    status = j.get('Cluster',{}).get('Status', {})
-    name = j.get('Cluster',{}).get('Name', "UNKNOWN")
-    state = status.get('State', "UNKNOWN")
-    message = status.get('StateChangeReason', {}).get('Message', "")
-    print "Showing cluster named ", name
-    print "Cluster status: ", state
-    print message
-
 
 def FindEMRClusterMasterInstance(cluster_id):
     if not cluster_id:
@@ -333,4 +327,71 @@ def FindEMRClusterMasterInstance(cluster_id):
             break
     return master_instance
 
+def YarnFindSparkUI(yarn_master_ip):
+    """Given yarn_master ip - find out where the application master for the first
+    active application runs"""
+    import urllib2
+    master = "http://%s:8088/" % yarn_master_ip
+    # get configured values
+
+    api = master + "ws/v1/"
+
+    appsJson = json.loads(urllib2.urlopen(api + "cluster/apps").read())
+    tracking_url = None
+    if appsJson.get('apps'):  # checks if 'apps' exists and has elements
+        apps = appsJson['apps']['app']
+        for app in apps:
+            if not app:
+                continue
+            print "\nAPP: ", app['name']
+            app_state = app['state']
+            print "State: %s (queue %s)" % (app_state, app['queue'])
+            print "allocatedMB %d" % (app['allocatedMB'])
+            if app_state != "FINISHED":
+                url = app['trackingUrl']
+                tracking_url = url
+        print
+    else:
+        print "NO APPS running - first activate Zeppelin or spark-shell and give them some work."
+
+    return tracking_url
+
+
+def ShowEMRCluster(cluster_id):
+    """print Cluster status - human readable for DescribeEMRCluster result"""
+    j = DescribeEMRCluster(cluster_id)
+    if not j:
+        print "ERROR - Cluster not found"
+        return
+    status = j.get('Cluster',{}).get('Status', {})
+    name = j.get('Cluster',{}).get('Name', "UNKNOWN")
+    state = status.get('State', "UNKNOWN")
+    message = status.get('StateChangeReason', {}).get('Message', "")
+    print "Showing cluster named ", name
+    print "Cluster status: ", state
+    print message
+
+
+def EmrSSHTunnelToSparkUI(pem_file):
+    import urlparse
+    global master_address
+    global machine_ip
+    global ssh_tunnel_ports
+    print "Assuming I'm running on EMR master cluster machine"
+    print "Proxy Spark UI - Connecting YARN to find ApplicationMaster"
+    spark_ui = YarnFindSparkUI(SelfInstancePubIp())
+    if not spark_ui:
+        print "ERROR - could not find YARN Spark application"
+        return 3
+    url = urlparse.urlparse(spark_ui)
+    netloc = url.netloc or ""
+    ui_host, ui_port = netloc.split(':')
+    machine_ip = ui_host
+    local_ui_port = 20888
+    ssh_tunnel_ports = [(local_ui_port, int(ui_port))]
+    new_tarcking_url = url._replace(netloc="localhost:%d" % local_ui_port)
+    print "Spark UI SSH: ", "#" * 50
+    print new_tarcking_url.geturl()
+    print "Spark UI SSH: ", "^" * 50
+    SSHInstance(machine_ip, pem_file)
 
