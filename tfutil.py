@@ -45,7 +45,7 @@ class TensorBoardRunner(object):
         # for example - if you have a virtualenv 'tensorflow' installed - create tbenv.sh:
         #  |#!/bin/sh
         #  |source ~/tensorflow/bin/activate
-        #  |tensorboard  "$@"
+        #  |exec tensorboard  "$@"
         #  |
         # $ export RUN_TENSORBOARD=/path/to/tbenv.sh
         tbbin = os.getenv("RUN_TENSORBOARD", "tensorboard")
@@ -96,6 +96,7 @@ class TFSessionWithInit():
         self.sess = tf.Session()
         self.tf_init = None
         self.saver = None
+        self.is_restored = False
         self.train_writer = None
         self.summary_merged = None
         self.write_tensorboard = write_tensorboard
@@ -105,6 +106,8 @@ class TFSessionWithInit():
         self.run_count = 0
 
     def _try_init_vars_once(self):
+        if self.is_restored:
+            return
         if self.tf_init is None:
             try:
                 self.tf_init = tf.global_variables_initializer()
@@ -161,6 +164,7 @@ class TFSessionWithInit():
     def restoreModel(self, model_file_path):
         if self.saver is None:
             self.saver = tf.train.Saver()
+        self.is_restored = True
         self.saver.restore(self.sess, model_file_path)
 
 
