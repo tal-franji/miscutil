@@ -5,7 +5,7 @@ import tensorflow as tf
 
 """TensorFlow utils
 Utils to work with TensorFlow inside Jupyter
-Plus some convenient wrappers for session to start TensorFlow, summary writers etc.
+Plus some convenient wrappers for session to start TensorBoard, summary writers etc.
 """
 
 class TensorBoardRunner(object):
