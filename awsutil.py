@@ -91,6 +91,22 @@ def SelfInstancePubIp():
         return "127.0.0.1"
     return GetPublicIp(instance_id)
 
+def _tagsToDict(json_obj):
+    tags_array = json_obj.get("Tags", [])
+    return  dict([(d["Key"],d["Value"]) for d in tags_array])
+
+def VpcFindDefault():
+    j = AwsSystem("aws ec2 describe-vpcs")
+    if not j:
+        return None
+    for vpc in j.get("Vpcs",[]):
+        id = vpc.get("VpcId")
+        tags = _tagsToDict(j)
+        if tags["Name"].lower() == "default":
+            #aws ec2 describe-subnets --filter Name=vpc-id,Values=vpc-ade55ec8
+            return id
+    return None
+
 # find instance by tag
 def InstanceOfTagValue(tag, value):
     for inst in IterInstances():
@@ -225,7 +241,11 @@ def SSHInstance(instance_id, pem_ppk_file):
 def SSHInstanceWin32(instance_id, ppk_file):
     # 'C:\Program Files (x86)\PuTTY\putty.exe'
     # -ssh $HOST -l user -i private-key-file
-    putty = os.getenv("PUTTYEXE", 'C:\Program Files (x86)\PuTTY\putty.exe')
+    putty = os.getenv("PUTTYEXE", 'C:\Program Files\PuTTY\putty.exe')
+    if not os.path.exists(putty):
+        putty = 'C:\Program Files (x86)\PuTTY\putty.exe'
+    if not os.path.exists(putty):
+        putty = 'C:\Program Files\PuTTY\putty.exe'
     if not os.path.exists(putty):
         print "ERROR - could not find putty exe : %s" % putty
         print "Please define env variable PUTTYEXE"
