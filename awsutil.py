@@ -7,7 +7,7 @@
 # https://github.com/tal-franji/miscutil/blob/master/awsutil.py
 __author__ = "tal.franji@gmail.com"
 
-
+import datetime
 import json
 import os
 import re
@@ -91,22 +91,6 @@ def SelfInstancePubIp():
         return "127.0.0.1"
     return GetPublicIp(instance_id)
 
-def _tagsToDict(json_obj):
-    tags_array = json_obj.get("Tags", [])
-    return  dict([(d["Key"],d["Value"]) for d in tags_array])
-
-def VpcFindDefault():
-    j = AwsSystem("aws ec2 describe-vpcs")
-    if not j:
-        return None
-    for vpc in j.get("Vpcs",[]):
-        id = vpc.get("VpcId")
-        tags = _tagsToDict(j)
-        if tags["Name"].lower() == "default":
-            #aws ec2 describe-subnets --filter Name=vpc-id,Values=vpc-ade55ec8
-            return id
-    return None
-
 # find instance by tag
 def InstanceOfTagValue(tag, value):
     for inst in IterInstances():
@@ -133,6 +117,35 @@ def UnderscoreToHyphen(key_val):
         k2 = k.replace("_", "-")
         res[k2] = v
     return res
+
+def jpath(obj, path, default_value = None):
+    a = path.split(".")
+    match_index = re.compile(r'([\w_\-\d]+)\[(\d+)\]')
+    cur = obj
+    if cur is None:
+        return default_value
+    for key in a:
+        if cur is None:
+            return default_value
+        m = match_index.match(key)
+        if m:
+            name = m.group(1)
+            idx = int(m.group(2))
+            cur = cur.get(name)
+            if not cur:
+                return default_value
+            if not hasattr(cur, "__getitem__"):
+                return None
+            if idx >= len(cur):
+                return default_value
+            cur = cur[idx]
+            continue
+        # else - not indexing
+        if not isinstance(cur, dict):
+            return default_value
+        cur = cur.get(key)
+    return cur
+
 
 def CreateInstance(tags={}, **kwargs):
     block_device_mapping = None
@@ -162,7 +175,7 @@ def CreateInstance(tags={}, **kwargs):
               }
     params.update(args)
     j = AwsSystem("aws ec2 run-instances", params)
-    instance_id = j.get("Instances", [{}])[0].get("InstanceId", None)
+    instance_id = jpath(j, "Instances[0].InstanceId")
     if not instance_id:
         print "ERROR - bad response", str(j)
         return
@@ -189,7 +202,7 @@ class InstanceInfo(object):
         self.id = inst["InstanceId"]
         self.pub_ip = inst.get("PublicIpAddress", "noIP")
         tags_array = inst.get("Tags", [])
-        self.state = inst.get('State', {}).get('Name').lower()
+        self.state = jpath(inst, 'State.Name', "").lower()
         self.tags_dict = dict([(d["Key"],d["Value"]) for d in tags_array])
 
 
@@ -243,9 +256,9 @@ def SSHInstanceWin32(instance_id, ppk_file):
     # -ssh $HOST -l user -i private-key-file
     putty = os.getenv("PUTTYEXE", 'C:\Program Files\PuTTY\putty.exe')
     if not os.path.exists(putty):
-        putty = 'C:\Program Files (x86)\PuTTY\putty.exe'
-    if not os.path.exists(putty):
         putty = 'C:\Program Files\PuTTY\putty.exe'
+    if not os.path.exists(putty):
+        putty = 'C:\Program Files (x86)\PuTTY\putty.exe'
     if not os.path.exists(putty):
         print "ERROR - could not find putty exe : %s" % putty
         print "Please define env variable PUTTYEXE"
@@ -313,7 +326,7 @@ def FindEMRClusterByNameTag(cluster_name):
     if not j:
         return None
     for c in j.get("Clusters", [{}]):
-        state = c.get("Status", {}).get("State")
+        state = jpath("Status.State")
         if state in ['TERMINATING', 'TERMINATED', 'TERMINATED_WITH_ERRORS']:
             continue
         id = c.get("Id")
@@ -337,7 +350,7 @@ def FindEMRClusterMasterInstance(cluster_id):
     if not cluster_id:
         return None
     j = AwsSystem("aws emr describe-cluster", {'cluster-id' : cluster_id, 'region': None})
-    igroups = j.get("Cluster",{}).get("InstanceGroups",[])
+    igroups = jpath(j, "Cluster.InstanceGroups",[])
     master_instance_group = None
     for ig in igroups:
         if ig.get("Name", "").lower().startswith("master"):
@@ -388,10 +401,9 @@ def ShowEMRCluster(cluster_id):
     if not j:
         print "ERROR - Cluster not found"
         return
-    status = j.get('Cluster',{}).get('Status', {})
-    name = j.get('Cluster',{}).get('Name', "UNKNOWN")
-    state = status.get('State', "UNKNOWN")
-    message = status.get('StateChangeReason', {}).get('Message', "")
+    state = jpath(j, 'Cluster.Status.State', "UNKNOWN")
+    message = jpath(j, 'Cluster.Status.StateChangeReason.Message', "")
+    name = jpath(j, 'Cluster.Name', "UNKNOWN")
     print "Showing cluster named ", name
     print "Cluster status: ", state
     print message
@@ -419,4 +431,5 @@ def EmrSSHTunnelToSparkUI(pem_file):
     print new_tarcking_url.geturl()
     print "Spark UI SSH: ", "^" * 50
     SSHInstance(machine_ip, pem_file)
+
 
