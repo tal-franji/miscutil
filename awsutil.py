@@ -524,6 +524,6 @@ def EmrSSHTunnelToSparkUI(pem_file):
     print "Spark UI SSH: ", "#" * 50
     print new_tarcking_url.geturl()
     print "Spark UI SSH: ", "^" * 50
-    SSHInstance(machine_ip, pem_file)
+    SSHAddr(machine_ip, pem_file)
 
 
