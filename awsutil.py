@@ -351,6 +351,12 @@ def FindEMRClusterMasterInstance(cluster_id):
         return None
     j = AwsSystem("aws emr describe-cluster", {'cluster-id' : cluster_id, 'region': None})
     igroups = jpath(j, "Cluster.InstanceGroups",[])
+    if not igroups:
+        # cluster may have been created using instance groups or instance fleets
+        igroups = jpath(j, "Cluster.InstanceFleets",[])
+    if not igroups:
+        print "ERROR - cannot find Cluster.InstanceGroups/Cluster.InstanceFleets"
+        return None
     master_instance_group = None
     for ig in igroups:
         if ig.get("Name", "").lower().startswith("master"):
@@ -360,7 +366,7 @@ def FindEMRClusterMasterInstance(cluster_id):
     j = AwsSystem("aws emr list-instances", {'cluster-id' : cluster_id, 'region': None}, True)
     master_instance = None
     for i in j.get("Instances", []):
-        if i.get("InstanceGroupId") == master_instance_group:
+        if i.get("InstanceGroupId") == master_instance_group or i.get("InstanceFleetId"):
             master_instance = i.get("Ec2InstanceId")
             break
     return master_instance
