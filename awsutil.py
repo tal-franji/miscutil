@@ -365,6 +365,51 @@ def FindEMRClusterMasterInstance(cluster_id):
             break
     return master_instance
 
+
+def EC2GetSpotBidPrice(instance_type, product_descriptions="Linux/UNIX"):
+    # find the max of last 7 days for the region
+    now= datetime.datetime.now()
+    t1 = now.isoformat()
+    t0 = (now - datetime.timedelta(days=7)).isoformat()
+    params = {'region': None,
+              'start-time': t0,
+              'end-time': t1,
+              'instance-types': instance_type,
+              'product-descriptions': product_descriptions,
+
+              }
+    j = AwsSystem("aws ec2 describe-spot-price-history", params, True)
+    ph = j.get('SpotPriceHistory', [])
+    num_price_samples = 0
+    total_prices = 0.0
+    for p in ph:
+            if p.get('AvailabilityZone', '').startswith(getDefault('region')):
+                try:
+                    price = float(p.get('SpotPrice'))
+                    num_price_samples += 1
+                    total_prices += price
+                except:
+                    pass
+
+    avg_price = total_prices / num_price_samples
+    return round(avg_price * 1.1, 3)  # bid a little higher. Only 3 digis after the decimal points are allowed
+
+
+def ShowEMRCluster(cluster_id):
+    """print Cluster status - human readable for DescribeEMRCluster result"""
+    j = DescribeEMRCluster(cluster_id)
+    if not j:
+        print "ERROR - Cluster not found"
+        return
+    state = jpath(j, 'Cluster.Status.State', "UNKNOWN")
+    message = jpath(j, 'Cluster.Status.StateChangeReason.Message', "")
+    name = jpath(j, 'Cluster.Name', "UNKNOWN")
+    print "Showing cluster named ", name
+    print "Cluster status: ", state
+    print message
+
+
+
 def YarnFindSparkUI(yarn_master_ip):
     """Given yarn_master ip - find out where the application master for the first
     active application runs"""
@@ -393,20 +438,6 @@ def YarnFindSparkUI(yarn_master_ip):
         print "NO APPS running - first activate Zeppelin or spark-shell and give them some work."
 
     return tracking_url
-
-
-def ShowEMRCluster(cluster_id):
-    """print Cluster status - human readable for DescribeEMRCluster result"""
-    j = DescribeEMRCluster(cluster_id)
-    if not j:
-        print "ERROR - Cluster not found"
-        return
-    state = jpath(j, 'Cluster.Status.State', "UNKNOWN")
-    message = jpath(j, 'Cluster.Status.StateChangeReason.Message', "")
-    name = jpath(j, 'Cluster.Name', "UNKNOWN")
-    print "Showing cluster named ", name
-    print "Cluster status: ", state
-    print message
 
 
 def EmrSSHTunnelToSparkUI(pem_file):
