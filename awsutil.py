@@ -251,7 +251,22 @@ def SSHInstance(instance_id, pem_ppk_file):
     else:
         SSHInstanceUnix(instance_id, pem_ppk_file)
 
+
+def SSHAddr(pub_addr, pem_ppk_file):
+    if sys.platform == "win32":
+        SSHAddrWin32(pub_addr, pem_ppk_file)
+    else:
+        SSHAddrUnix(pub_addr, pem_ppk_file)
+
+
 def SSHInstanceWin32(instance_id, ppk_file):
+    instance = FindInstance(instance_id)
+    if not instance:
+        print "instance not found:", instance_id
+        return
+    SSHAddrWin32(instance.pub_ip, ppk_file)
+
+def SSHAddrWin32(pub_addr, ppk_file):
     # 'C:\Program Files (x86)\PuTTY\putty.exe'
     # -ssh $HOST -l user -i private-key-file
     putty = os.getenv("PUTTYEXE", 'C:\Program Files\PuTTY\putty.exe')
@@ -262,10 +277,6 @@ def SSHInstanceWin32(instance_id, ppk_file):
     if not os.path.exists(putty):
         print "ERROR - could not find putty exe : %s" % putty
         print "Please define env variable PUTTYEXE"
-        return
-    instance = FindInstance(instance_id)
-    if not instance:
-        print "instance not found:", instance_id
         return
     ports = getDefault('ssh-tunnel-ports')
     lflag = ""
@@ -278,7 +289,7 @@ def SSHInstanceWin32(instance_id, ppk_file):
         else:
             src_port = port
             dst_port = port
-        lflag += " -L %d:%s:%d" % (src_port, instance.pub_ip, dst_port)
+        lflag += " -L %d:%s:%d" % (src_port, pub_addr, dst_port)
     System("\"%s\" -ssh -l %s -i %s %s %s"% (putty, getDefault('ec2-username'), ppk_file, instance.pub_ip, lflag))
 
 
@@ -288,18 +299,24 @@ def SSHInstanceUnix(instance_id, pem_file):
     if not instance:
         print "instance not found:", instance_id
         return
+    SSHAddrUnix(instance.pub_ip, pem_file)
+
+
+def SSHAddrUnix(pub_addr, pem_file):
+
     ports = getDefault('ssh-tunnel-ports')
     lflag = ""
     if not pem_file or not os.path.exists(pem_file):
         print "ERROR - no pem file found : ", pem_file
         exit(3)
     for port in ports:
-        lflag += " -L %d:%s:%d" % (port, instance.pub_ip, port)
+        lflag += " -L %d:%s:%d" % (port, pub_addr, port)
     i_flag = ""
     if pem_file:
         # pem file may be None if running from a machine with IAM role
         i_flag = "-i %s" % pem_file
-    System("ssh %s %s@%s %s"% (i_flag, getDefault('ec2-username'), instance.pub_ip, lflag))
+    System("ssh %s %s@%s %s"% (i_flag, getDefault('ec2-username'), pub_addr, lflag))
+
 
 # ssh to instance from laptop - this does NOT work on Windows
 def SCPInstances(instance_id, pem_file, src, dst):
@@ -346,10 +363,48 @@ def TerminateEMRCluster(cluster_id):
     return AwsSystem("aws emr terminate-clusters", {'cluster-ids' : cluster_id, 'region': None})
 
 
-def FindEMRClusterMasterInstance(cluster_id):
+def FindEMRClusterMasterAddr(cluster_id):
     if not cluster_id:
         return None
     j = AwsSystem("aws emr describe-cluster", {'cluster-id' : cluster_id, 'region': None})
+    pub_dns = jpath(j, "Cluster.MasterPublicDnsName")
+    if pub_dns:
+        return pub_dns
+    igroups = jpath(j, "Cluster.InstanceGroups",[])
+    if not igroups:
+        # cluster may have been created using instance groups or instance fleets
+        igroups = jpath(j, "Cluster.InstanceFleets",[])
+    if not igroups:
+        print "ERROR - cannot find Cluster.InstanceGroups/Cluster.InstanceFleets"
+        return None
+    master_instance_group = None
+    for ig in igroups:
+        if ig.get("Name", "").lower().startswith("master"):
+            master_instance_group = ig.get("Id")
+    if not master_instance_group:
+        return None
+    j = AwsSystem("aws emr list-instances", {'cluster-id' : cluster_id, 'region': None}, True)
+    master_instance = None
+    for i in j.get("Instances", []):
+        if i.get("InstanceGroupId") == master_instance_group or i.get("InstanceFleetId"):
+            master_instance = i.get("Ec2InstanceId")
+            break
+    # find master address
+    instance = FindInstance(master_instance)
+    if not instance:
+        print "MASTER instance not found:", master_instance
+        return None
+    return instance.pub_ip
+
+
+def FindEMRClusterMasterInstance_deprecated_(cluster_id):
+    if not cluster_id:
+        return None
+    j = AwsSystem("aws emr describe-cluster", {'cluster-id' : cluster_id, 'region': None})
+    pub_dns = jpath(j, "Cluster.MasterPublicDnsName")
+    if pub_dns:
+        return pub_dns
+
     igroups = jpath(j, "Cluster.InstanceGroups",[])
     if not igroups:
         # cluster may have been created using instance groups or instance fleets
