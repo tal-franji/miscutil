@@ -326,7 +326,7 @@ def FindEMRClusterByNameTag(cluster_name):
     if not j:
         return None
     for c in j.get("Clusters", [{}]):
-        state = jpath("Status.State")
+        state = jpath(c, "Status.State")
         if state in ['TERMINATING', 'TERMINATED', 'TERMINATED_WITH_ERRORS']:
             continue
         id = c.get("Id")
@@ -366,11 +366,11 @@ def FindEMRClusterMasterInstance(cluster_id):
     return master_instance
 
 
-def EC2GetSpotBidPrice(instance_type, product_descriptions="Linux/UNIX"):
+def EC2GetSpotBidPrice(instance_type, product_descriptions="Linux/UNIX", history_days=2):
     # find the max of last 7 days for the region
     now= datetime.datetime.now()
     t1 = now.isoformat()
-    t0 = (now - datetime.timedelta(days=7)).isoformat()
+    t0 = (now - datetime.timedelta(days=history_days)).isoformat()
     params = {'region': None,
               'start-time': t0,
               'end-time': t1,
@@ -379,6 +379,8 @@ def EC2GetSpotBidPrice(instance_type, product_descriptions="Linux/UNIX"):
 
               }
     j = AwsSystem("aws ec2 describe-spot-price-history", params, True)
+    if not j:
+        return None  # Can happen on timeout etc.
     ph = j.get('SpotPriceHistory', [])
     num_price_samples = 0
     total_prices = 0.0
