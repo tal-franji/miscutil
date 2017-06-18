@@ -1,3 +1,24 @@
+#!/usr/bin/python
+# File sync server/client
+#  Used to allow editing files on your laptop in local repo and reflecting changes on cloud machine
+# server (--destination) is an HTTP server listening and allowing upload of files.
+# --destination should be run on a cloud machine AWS/GCE to which you SSH
+# client (--source) runs on your laptop and checks for file modification. When a file is
+# modified - it checks with the server if it is newer and if so - uploads it.
+#
+# You should SSH to the machine with port forwarding to allow client/server communications.
+# USAGE:
+# [laptop]$ ssh -i <KEY.pem> <USER>@<HOST>  -L 8000:<HOST>:8000
+# ... connecting
+# [cloud]$ wget https://raw.githubusercontent.com/tal-franji/miscutil/master/fsync_server.py
+# [cloud]$ python fsync_server.py --destination
+# ... on a different window on your laptop:
+# [laptop]$ cd <MY_REPO_DIR>
+# [laptop]$ wget https://raw.githubusercontent.com/tal-franji/miscutil/master/fsync_server.py
+# [laptop]$ python fsync_server.py --source
+
+__author__ = "tal.franji@gmail.com"
+
 import argparse
 import json
 import os
