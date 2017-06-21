@@ -31,9 +31,9 @@ import httplib, urllib
 import urlparse
 
 class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
-    def __init__(self,*args, **kwargs):
+    def __init__(self, root_dir, *args, **kwargs):
         self.update_ts = 0
-        self.root_dir = "."
+        self.root_dir = root_dir
         # Note SimpleHTTPServer.SimpleHTTPRequestHandler is an old-style class BAAA!
         SimpleHTTPServer.SimpleHTTPRequestHandler.__init__(self,*args, **kwargs)
         # TODO(franji): Read timestamp from file
