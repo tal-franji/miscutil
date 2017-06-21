@@ -96,11 +96,11 @@ class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "error"}))
 
 
+def StartSyncServer(addr, port, root_dir):
+    def ServerConstructorHelper(*args, **kwargs):
+        return FileSuncServer(root_dir, *args, **kwargs)
 
-
-def StartSyncServer(addr, port):
-    Handler = FileSyncServer
-
+    Handler = ServerConstructorHelper
     httpd = SocketServer.TCPServer((addr, port), Handler)
 
     print "File Sync Server at port", port
@@ -150,8 +150,7 @@ def relative_path(root_dir, dirpath, f):
     return full
 
 
-def StartSyncClient(port):
-    root_dir = "."
+def StartSyncClient(port, root_dir):
     pat = re.compile(r".*\.py$")
     addr = "localhost:%d" % port
     files_attr = {}
@@ -189,13 +188,15 @@ def main():
     parser = argparse.ArgumentParser(description='File Sync server')
     parser.add_argument('--port', type=int,
                     help='Port server listens to', default=8000)
+    parser.add_argument('--dir',
+                    help='root directory from which to read (--source)/ write (--destination)', default=".")
     parser.add_argument('--source', action='store_true', help="Run this on the source of the files to sync")
     parser.add_argument('--destination', action='store_true', help="Run this on the destination machine")
     args = parser.parse_args()
     if args.destination:
-        StartSyncServer("", args.port)
+        StartSyncServer("", args.port, args.dir)
     elif args.source:
-        StartSyncClient(args.port)
+        StartSyncClient(args.port, args.dir)
     else:
         print "ERROR - must specify either --source or --destination"
 
