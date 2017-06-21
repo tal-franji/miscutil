@@ -89,12 +89,15 @@ class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
                 os.makedirs(dir)
             with open(filename, "w+b") as f:
                 f.write(content)
+                print "UPDATED ", filename
         except:
             self.send_response(500)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({"status": "error"}))
 
+    def log_request(self, code='-', size='-'):
+        pass # TODO(franji): add verbose mode?
 
 def StartSyncServer(addr, port, root_dir):
     def ServerConstructorHelper(*args, **kwargs):
@@ -104,21 +107,23 @@ def StartSyncServer(addr, port, root_dir):
     httpd = SocketServer.TCPServer((addr, port), Handler)
 
     print "File Sync Server at port", port
-    httpd.serve_forever()
+    try:
+        httpd.serve_forever()
+    except:
+        httpd.server_close()
+
 
 
 def ClientRequestFileTime(addr, file):
     params = urllib.urlencode({"file": file, "fts": 0})
-    print "DEBUG url ", params
     headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
     conn = httplib.HTTPConnection(addr)
     conn.request("GET", "/?" + params, None, headers)
     r = conn.getresponse()
-    print "DEBUG ", r.status, r.reason
     return r.read()
 
 
-def  ClientUploadFile(addr, filename, mtime):
+def ClientUploadFile(addr, filename, mtime):
     content = None
     print "Uploading file: ", filename
     try:
@@ -154,6 +159,7 @@ def StartSyncClient(port, root_dir):
     pat = re.compile(r".*\.py$")
     addr = "localhost:%d" % port
     files_attr = {}
+    log_count = 0
     while True:
         for dirpath, dirnames, filenames in os.walk(root_dir):
             for f in filenames:
@@ -161,7 +167,10 @@ def StartSyncClient(port, root_dir):
                 if not pat.match(filename):
                     continue
                 time.sleep(0.1)
-                print "checking ",dirpath, filename
+                log_count += 1
+                if log_count >= 50:
+                    print "Checking file ", filename
+                    log_count = 0
                 mtime = os.path.getmtime(filename)
                 client_first_look = False
                 if filename in files_attr:
