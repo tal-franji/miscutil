@@ -98,7 +98,7 @@ class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
 def StartSyncServer(addr, port, root_dir):
     def ServerConstructorHelper(*args, **kwargs):
-        return FileSuncServer(root_dir, *args, **kwargs)
+        return FileSyncServer(root_dir, *args, **kwargs)
 
     Handler = ServerConstructorHelper
     httpd = SocketServer.TCPServer((addr, port), Handler)
