@@ -52,19 +52,19 @@ class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         params = self.parse_params()
-        file = params.get("file")
+        filename = params.get("file")
         fts = params.get("fts")
         if file and fts:
-            return self.get_file_status(file, fts)
+            return self.get_file_status(filename)
         self.wfile.write(json.dumps({"status": "error"}))
 
-    def get_file_status(self, file, fts):
-        filename = os.path.join(self.root_dir, file)
-        if os.path.exists(filename):
-            mtime = os.path.getmtime(filename)
+    def get_file_status(self, filename):
+        full = os.path.join(self.root_dir, filename)
+        if os.path.exists(full):
+            mtime = os.path.getmtime(full)
         else:
             mtime = 0
-        j = {"files": [{"file": file, "fts": mtime}], "status": "ok"}
+        j = {"files": [{"file": filename, "fts": mtime}], "status": "ok"}
         self.wfile.write(json.dumps(j))
 
     def do_POST(self):
@@ -123,11 +123,11 @@ def ClientRequestFileTime(addr, file):
     return r.read()
 
 
-def ClientUploadFile(addr, filename, mtime):
+def ClientUploadFile(addr, full, filename, mtime):
     content = None
     print "Uploading file: ", filename
     try:
-        with open(filename, "rb") as f:
+        with open(full, "rb") as f:
             content = f.read()
         if not content:
             print "ERROR reading file ", filename
@@ -166,7 +166,7 @@ def IterRelativePath(root_dir):
 
 def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclude_regex=None):
     pat_include = map(lambda r: re.compile(r), include_regex) if include_regex else None
-    pat_exclude = map(lambda r: re.compile(r), exclude_regex) if include_regex else None
+    pat_exclude = map(lambda r: re.compile(r), exclude_regex) if exclude_regex else None
     addr = "localhost:%d" % port
     files_attr = {}
     log_count = 0
@@ -179,7 +179,7 @@ def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclu
                         skip_file = False
             if pat_exclude:
                 for r in pat_exclude:
-                    if not re.match(r, filename):
+                    if re.match(r, filename):
                         skip_file = True
             if skip_file:
                 continue
@@ -189,8 +189,8 @@ def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclu
             if log_count >= 50:
                 print "Checking file ", filename
                 log_count = 0
-
-            mtime = os.path.getmtime(filename)
+            full = os.path.join(root_dir, filename)
+            mtime = os.path.getmtime(full)
             client_first_look = False
             if filename in files_attr:
                 last_mtime = files_attr[filename]["mtime"]
@@ -204,11 +204,12 @@ def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclu
                 js = ClientRequestFileTime(addr, filename)
                 j = json.loads(js)
                 fts = j.get("files",[{}])[0].get("fts",0)
+                #print "DEBUG ", fts, mtime
                 if fts >= mtime:
                     # server already updated from previous run of client
                     # no need to upload
                     continue
-            ClientUploadFile(addr, filename, mtime)
+            ClientUploadFile(addr, full, filename, mtime)
 
 
 def main():
@@ -220,10 +221,12 @@ def main():
     parser.add_argument('--source', action='store_true', help="Run this on the source of the files to sync")
     parser.add_argument('--destination', action='store_true', help="Run this on the destination machine")
     parser.add_argument('--rex_include',
-                    help='regex of files to include in sync (can give several)', default=r".*\.(py|java|xml|scala)$",
+                    help='regex of files to include in sync (can give several)',
+                    default=[r".*\.(py|java|xml|scala)$"],
                     action='append')
     parser.add_argument('--rex_exclude',
                     help='regex of files to exclude from sync (can give several)',
+                    default=[r"^\."],
                     action='append')
     args = parser.parse_args()
     if args.destination:
