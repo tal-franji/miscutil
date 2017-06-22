@@ -10,12 +10,12 @@
 # USAGE:
 # [laptop]$ ssh -i <KEY.pem> <USER>@<HOST>  -L 8000:<HOST>:8000
 # ... connecting
-# [cloud]$ wget https://raw.githubusercontent.com/tal-franji/miscutil/master/fsync_server.py
-# [cloud]$ python fsync_server.py --destination
+# [cloud]$ wget https://raw.githubusercontent.com/tal-franji/miscutil/master/dirsync.py
+# [cloud]$ python dirsync.py --destination
 # ... on a different window on your laptop:
 # [laptop]$ cd <MY_REPO_DIR>
-# [laptop]$ wget https://raw.githubusercontent.com/tal-franji/miscutil/master/fsync_server.py
-# [laptop]$ python fsync_server.py --source
+# [laptop]$ wget https://raw.githubusercontent.com/tal-franji/miscutil/master/dirsync.py
+# [laptop]$ python dirsync.py --source
 
 __author__ = "tal.franji@gmail.com"
 
@@ -155,42 +155,60 @@ def relative_path(root_dir, dirpath, f):
     return full
 
 
-def StartSyncClient(port, root_dir):
-    pat = re.compile(r".*\.py$")
+def IterRelativePath(root_dir):
+    # generate all files in the directories under root_dir
+    # generate names relative to root_dir
+    for dirpath, _, filenames in os.walk(root_dir):
+        for f in filenames:
+            filename = relative_path(root_dir, dirpath, f)
+            yield filename
+
+
+def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclude_regex=None):
+    pat_include = map(lambda r: re.compile(r), include_regex) if include_regex else None
+    pat_exclude = map(lambda r: re.compile(r), exclude_regex) if include_regex else None
     addr = "localhost:%d" % port
     files_attr = {}
     log_count = 0
     while True:
-        for dirpath, dirnames, filenames in os.walk(root_dir):
-            for f in filenames:
-                filename = relative_path(root_dir, dirpath, f)
-                if not pat.match(filename):
-                    continue
-                time.sleep(0.1)
-                log_count += 1
-                if log_count >= 50:
-                    print "Checking file ", filename
-                    log_count = 0
-                mtime = os.path.getmtime(filename)
-                client_first_look = False
-                if filename in files_attr:
-                    last_mtime = files_attr[filename]["mtime"]
-                    if mtime <= last_mtime:
-                        continue
-                else:
-                    files_attr[filename] = {}
-                    client_first_look = True
-                files_attr[filename]["mtime"] = mtime
-                if client_first_look:
-                    js = ClientRequestFileTime(addr, filename)
-                    j = json.loads(js)
-                    fts = j.get("files",[{}])[0].get("fts",0)
-                    if fts >= mtime:
-                        # server already updated from previous run of client
-                        # no need to upload
-                        continue
-                ClientUploadFile(addr, filename, mtime)
+        for filename in IterRelativePath(root_dir):
+            skip_file = True
+            if pat_include:
+                for r in pat_include:
+                    if re.match(r, filename):
+                        skip_file = False
+            if pat_exclude:
+                for r in pat_exclude:
+                    if not re.match(r, filename):
+                        skip_file = True
+            if skip_file:
+                continue
 
+            time.sleep(0.1)
+            log_count += 1
+            if log_count >= 50:
+                print "Checking file ", filename
+                log_count = 0
+
+            mtime = os.path.getmtime(filename)
+            client_first_look = False
+            if filename in files_attr:
+                last_mtime = files_attr[filename]["mtime"]
+                if mtime <= last_mtime:
+                    continue
+            else:
+                files_attr[filename] = {}
+                client_first_look = True
+            files_attr[filename]["mtime"] = mtime
+            if client_first_look:
+                js = ClientRequestFileTime(addr, filename)
+                j = json.loads(js)
+                fts = j.get("files",[{}])[0].get("fts",0)
+                if fts >= mtime:
+                    # server already updated from previous run of client
+                    # no need to upload
+                    continue
+            ClientUploadFile(addr, filename, mtime)
 
 
 def main():
@@ -201,16 +219,22 @@ def main():
                     help='root directory from which to read (--source)/ write (--destination)', default=".")
     parser.add_argument('--source', action='store_true', help="Run this on the source of the files to sync")
     parser.add_argument('--destination', action='store_true', help="Run this on the destination machine")
+    parser.add_argument('--rex_include',
+                    help='regex of files to include in sync (can give several)', default=r".*\.(py|java|xml|scala)$",
+                    action='append')
+    parser.add_argument('--rex_exclude',
+                    help='regex of files to exclude from sync (can give several)',
+                    action='append')
     args = parser.parse_args()
     if args.destination:
         StartSyncServer("", args.port, args.dir)
     elif args.source:
-        StartSyncClient(args.port, args.dir)
+        StartSyncClient(args.port, args.dir, args.rex_include, args.rex_exclude)
     else:
         print "ERROR - must specify either --source or --destination"
 
-
     return 0
+
 
 if __name__ == '__main__':
     sys.exit(main())
