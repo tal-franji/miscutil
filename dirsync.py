@@ -90,7 +90,7 @@ class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
                 os.makedirs(dir)
             with open(full, "w+b") as f:
                 f.write(content)
-                print "UPDATED ", filename
+                print "UPDATED {} t={}".format(filename, fts)
         except:
             self.send_response(500)
             self.send_header('Content-type', 'application/json')
@@ -166,55 +166,87 @@ def IterRelativePath(root_dir):
             yield filename
 
 
+def iter_merge_infinite_loop(iter_builder1, iter_builder2):
+    it1 = iter_builder1()
+    it2 = iter_builder2()
+    while True:
+        try:
+            x = it1.next()
+            yield x
+        except (StopIteration, RuntimeError):
+            it1 = iter_builder1()
+        try:
+            x = it2.next()
+            yield x
+        except (StopIteration, RuntimeError):
+            it2 = iter_builder2()
+
+
 def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclude_regex=None):
     pat_include = map(lambda r: re.compile(r), include_regex) if include_regex else None
     pat_exclude = map(lambda r: re.compile(r), exclude_regex) if exclude_regex else None
+    def skip_file(filename):
+        skip = True
+        if pat_include:
+            for r in pat_include:
+                if r.match(filename):
+                    skip = False
+        if pat_exclude:
+            for r in pat_exclude:
+                if r.match(filename):
+                    skip = True
+        return skip
+
     addr = "localhost:%d" % port
     files_attr = {}
+
+    def handle_file(filename):
+        # return True, mtime if file needed upload
+        # return False if not
+        full = os.path.join(root_dir, filename)
+        mtime = os.path.getmtime(full)
+        client_first_look = False
+        if filename in files_attr:
+            last_mtime = files_attr[filename]["mtime"]
+            if mtime <= last_mtime:
+                return False, mtime
+        else:
+            files_attr[filename] = {}
+            client_first_look = True
+        files_attr[filename]["mtime"] = mtime
+        if client_first_look:
+            js = ClientRequestFileTime(addr, filename)
+            j = json.loads(js)
+            fts = j.get("files",[{}])[0].get("fts",0)
+            if fts >= mtime:
+                # server already updated from previous run of client
+                # no need to upload
+                return False, mtime
+        ClientUploadFile(addr, full, filename, mtime)
+        return True, mtime
+
     log_count = 0
     speed = 1.0
-    while True:
-        for filename in IterRelativePath(root_dir):
-            skip_file = True
-            if pat_include:
-                for r in pat_include:
-                    if re.match(r, filename):
-                        skip_file = False
-            if pat_exclude:
-                for r in pat_exclude:
-                    if re.match(r, filename):
-                        skip_file = True
-            if skip_file:
-                continue
-            time.sleep(0.1 * speed)
-            speed = min(max(speed * 1.05, 0), 1.0)
-            log_count += 1
-            if log_count >= 50:
-                print "Checking file ", filename
-                log_count = 0
-            full = os.path.join(root_dir, filename)
-            mtime = os.path.getmtime(full)
-            client_first_look = False
-            if filename in files_attr:
-                last_mtime = files_attr[filename]["mtime"]
-                if mtime <= last_mtime:
-                    continue
-            else:
-                files_attr[filename] = {}
-                client_first_look = True
-            files_attr[filename]["mtime"] = mtime
-            if client_first_look:
-                js = ClientRequestFileTime(addr, filename)
-                print "DEBUG ", js
-                j = json.loads(js)
-                fts = j.get("files",[{}])[0].get("fts",0)
-                print "DEBUG ", fts, mtime
-                if fts >= mtime:
-                    # server already updated from previous run of client
-                    # no need to upload
-                    continue
-            ClientUploadFile(addr, full, filename, mtime)
+    recently_changed = {}
+    for filename in iter_merge_infinite_loop(lambda : IterRelativePath(root_dir),
+                                             lambda: iter(recently_changed.viewkeys())):
+        if skip_file(filename):
+            continue
+        time.sleep(0.1 * speed)
+        speed = min(max(speed * 1.05, 0), 1.0)
+        log_count += 1
+        if log_count >= 50:
+            print "Checking file ", filename
+            log_count = 0
+        updated, mtime = handle_file(filename)
+        if updated:
+            recently_changed[filename] = mtime
             speed /= 2.0
+        else:
+            # check if need to remove from recently changed
+            if filename in recently_changed and time.time() - mtime > 5 * 60:
+                del recently_changed[filename]
+
 
 
 def main():
