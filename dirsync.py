@@ -31,11 +31,11 @@ import httplib, urllib
 import urlparse
 
 class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
-    def __init__(self, root_dir, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         self.update_ts = 0
-        self.root_dir = root_dir
+        self.root_dir = args[0]
         # Note SimpleHTTPServer.SimpleHTTPRequestHandler is an old-style class BAAA!
-        SimpleHTTPServer.SimpleHTTPRequestHandler.__init__(self,*args, **kwargs)
+        SimpleHTTPServer.SimpleHTTPRequestHandler.__init__(self, *args[1:], **kwargs)
         # TODO(franji): Read timestamp from file
 
     def parse_params(self):
@@ -84,10 +84,11 @@ class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
             if not filename:
                 return
             content = params["content"]
-            dir = os.path.split(filename)[0]
+            full = os.path.join(self.root_dir, filename)
+            dir = os.path.split(full)[0]
             if dir and not os.path.isdir(dir):
                 os.makedirs(dir)
-            with open(filename, "w+b") as f:
+            with open(full, "w+b") as f:
                 f.write(content)
                 print "UPDATED ", filename
         except:
@@ -99,9 +100,10 @@ class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
     def log_request(self, code='-', size='-'):
         pass # TODO(franji): add verbose mode?
 
+
 def StartSyncServer(addr, port, root_dir):
     def ServerConstructorHelper(*args, **kwargs):
-        return FileSyncServer(root_dir, *args, **kwargs)
+        return FileSyncServer(*([root_dir] + list(args)), **kwargs)
 
     Handler = ServerConstructorHelper
     httpd = SocketServer.TCPServer((addr, port), Handler)
@@ -109,7 +111,7 @@ def StartSyncServer(addr, port, root_dir):
     print "File Sync Server at port", port
     try:
         httpd.serve_forever()
-    except:
+    finally:
         httpd.server_close()
 
 
@@ -170,6 +172,7 @@ def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclu
     addr = "localhost:%d" % port
     files_attr = {}
     log_count = 0
+    speed = 1.0
     while True:
         for filename in IterRelativePath(root_dir):
             skip_file = True
@@ -183,8 +186,8 @@ def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclu
                         skip_file = True
             if skip_file:
                 continue
-
-            time.sleep(0.1)
+            time.sleep(0.1 * speed)
+            speed = min(max(speed * 1.05, 0), 1.0)
             log_count += 1
             if log_count >= 50:
                 print "Checking file ", filename
@@ -202,14 +205,16 @@ def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclu
             files_attr[filename]["mtime"] = mtime
             if client_first_look:
                 js = ClientRequestFileTime(addr, filename)
+                print "DEBUG ", js
                 j = json.loads(js)
                 fts = j.get("files",[{}])[0].get("fts",0)
-                #print "DEBUG ", fts, mtime
+                print "DEBUG ", fts, mtime
                 if fts >= mtime:
                     # server already updated from previous run of client
                     # no need to upload
                     continue
             ClientUploadFile(addr, full, filename, mtime)
+            speed /= 2.0
 
 
 def main():
