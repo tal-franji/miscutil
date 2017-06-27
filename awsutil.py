@@ -54,9 +54,8 @@ def PSystem(cmd_template, params):
     cmd = cmd % params
     return OSys(cmd)
 
-# add --key=value to the command based on params dict
-# return parsed json result
-def AwsSystem(cmd_head, params, useDefaultForNone=True):
+
+def AwsSystemRaw(cmd_head, params, useDefaultForNone=True):
     # ignore params where value is None
     effective_params = dict()
     for k,v in params.iteritems():
@@ -67,14 +66,21 @@ def AwsSystem(cmd_head, params, useDefaultForNone=True):
             effective_params[k] = v
 
     cmd = cmd_head + " " + " ".join(["--%s %s" % (k, v) for k,v in  effective_params.iteritems()])
-    json_str = OSys(cmd)
+    return OSys(cmd)
+
+
+
+# add --key=value to the command based on params dict
+# return parsed json result
+def AwsSystem(cmd_head, params, useDefaultForNone=True):
+    json_str = AwsSystemRaw(cmd_head, params, useDefaultForNone)
     if not json_str:
         return None
     try:
         j = json.loads(json_str)
         return j
     except:
-        print "ERROR - Bad json from cmd=", cmd
+        print "ERROR - Bad json from cmd=", cmd_head
         print "response: ", json_str
     return None
 
@@ -470,6 +476,7 @@ def ShowEMRCluster(cluster_id):
     print "Showing cluster named ", name
     print "Cluster status: ", state
     print message
+    return state
 
 
 
