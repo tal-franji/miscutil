@@ -296,7 +296,7 @@ def SSHAddrWin32(pub_addr, ppk_file):
             src_port = port
             dst_port = port
         lflag += " -L %d:%s:%d" % (src_port, pub_addr, dst_port)
-    System("\"%s\" -ssh -l %s -i %s %s %s"% (putty, getDefault('ec2-username'), ppk_file, instance.pub_ip, lflag))
+    System("\"%s\" -ssh -l %s -i %s %s %s"% (putty, getDefault('ec2-username'), ppk_file, pub_addr, lflag))
 
 
 # ssh to instance from laptop - this does NOT work on Windows
