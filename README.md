@@ -9,6 +9,7 @@ File sync server/client
  client (--source) runs on your laptop and checks for file modification. When a file is
  modified - it checks with the server if it is newer and if so - uploads it.
 
+```
  You should SSH to the machine with port forwarding to allow client/server communications.
  USAGE:
  [laptop]$ ssh -i <KEY.pem> <USER>@<HOST>  -L 8000:<HOST>:8000
