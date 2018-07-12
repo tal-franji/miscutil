@@ -21,6 +21,9 @@ GlobalDefaults = {
   'region': 'eu-west-1',
    'ec2-username': 'ec2-user', # 'hadoop' for emr
    'ssh-tunnel-ports': [4040, 8080, 8020, 9090, 8890, 9026],
+    "emr_master_instance": "m3.xlarge",
+    "emr_core_instance": "m3.xlarge",
+    "emr_n_core": "2",
 }
 
 # used by this module to read the defaults
