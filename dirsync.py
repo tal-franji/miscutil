@@ -17,34 +17,30 @@
 # [laptop]$ wget https://raw.githubusercontent.com/tal-franji/miscutil/master/dirsync.py
 # [laptop]$ python dirsync.py --source
 
-from __future__ import print_function
 __author__ = "tal.franji@gmail.com"
 
 import argparse
 import json
 import os
 import re
-import SimpleHTTPServer
-import SocketServer
+import http.server
 import sys
 import time
-import httplib, urllib
-import urlparse
+import urllib.parse
 
-class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
+class FileSyncServer(http.server.BaseHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         self.update_ts = 0
         self.root_dir = args[0]
-        # Note SimpleHTTPServer.SimpleHTTPRequestHandler is an old-style class BAAA!
-        SimpleHTTPServer.SimpleHTTPRequestHandler.__init__(self, *args[1:], **kwargs)
+        super().__init__(*args[1:], **kwargs)
         # TODO(franji): Read timestamp from file
 
     def parse_params(self):
-        url_parts = urlparse.urlparse(self.path)
+        url_parts = urllib.parse.urlparse(self.path)
         qs = url_parts[4]
-        params0 = urlparse.parse_qs(qs)
+        params0 = urllib.parse.parse_qs(qs)
         params = {}
-        for k,v in params0.iteritems():
+        for k,v in params0.items():
             params[k] = v[-1]
         return params
 
@@ -55,9 +51,9 @@ class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
         params = self.parse_params()
         filename = params.get("file")
         fts = params.get("fts")
-        if file and fts:
+        if filename and fts:
             return self.get_file_status(filename)
-        self.wfile.write(json.dumps({"status": "error"}))
+        self.wfile.write(json.dumps({"status": "error"}).encode('utf-8'))
 
     def get_file_status(self, filename):
         full = os.path.join(self.root_dir, filename)
@@ -66,18 +62,17 @@ class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
         else:
             mtime = 0
         j = {"files": [{"file": filename, "fts": mtime}], "status": "ok"}
-        self.wfile.write(json.dumps(j))
+        self.wfile.write(json.dumps(j).encode('utf-8'))
 
     def do_POST(self):
         try:
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            data = self.rfile.read()
-
-            params0 = urlparse.parse_qs(data)
+            data = self.rfile.read().decode('utf-8')
+            params0 = urllib.parse.parse_qs(data)
             params = {}
-            for k,v in params0.iteritems():
+            for k,v in params0.items():
                 params[k] = v[-1]
 
             filename = params["file"]
@@ -90,13 +85,13 @@ class FileSyncServer(SimpleHTTPServer.SimpleHTTPRequestHandler):
             if dir and not os.path.isdir(dir):
                 os.makedirs(dir)
             with open(full, "w+b") as f:
-                f.write(content)
+                f.write(content.encode('utf-8'))
                 print("UPDATED {} t={}".format(filename, fts))
         except:
             self.send_response(500)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "error"}))
+            self.wfile.write(json.dumps({"status": "error"}).encode('utf-8'))
 
     def log_request(self, code='-', size='-'):
         pass # TODO(franji): add verbose mode?
@@ -107,7 +102,7 @@ def StartSyncServer(addr, port, root_dir):
         return FileSyncServer(*([root_dir] + list(args)), **kwargs)
 
     Handler = ServerConstructorHelper
-    httpd = SocketServer.TCPServer((addr, port), Handler)
+    httpd = http.server.HTTPServer((addr, port), Handler)
 
     print("File Sync Server at port", port)
     try:
@@ -118,12 +113,12 @@ def StartSyncServer(addr, port, root_dir):
 
 
 def ClientRequestFileTime(addr, file):
-    params = urllib.urlencode({"file": file, "fts": 0})
+    params = urllib.parse.urlencode({"file": file, "fts": 0})
     headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
-    conn = httplib.HTTPConnection(addr)
+    conn = http.client.HTTPConnection(addr)
     conn.request("GET", "/?" + params, None, headers)
     r = conn.getresponse()
-    return r.read()
+    return r.read().decode('utf-8')
 
 
 def ClientUploadFile(addr, full, filename, mtime):
@@ -135,9 +130,9 @@ def ClientUploadFile(addr, full, filename, mtime):
         if not content:
             print("ERROR reading file ", filename)
             return
-        params = urllib.urlencode({"file": filename, "fts": mtime, "content": content})
+        params = urllib.parse.urlencode({"file": filename, "fts": mtime, "content": content})
         headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
-        conn = httplib.HTTPConnection(addr)
+        conn = http.client.HTTPConnection(addr)
         conn.request("POST", "/", params,  headers)
         r = conn.getresponse()
         print("Upload response: ", r.status, r.reason)
@@ -172,18 +167,18 @@ def iter_merge_infinite_loop(iter_builder1, iter_builder2):
     it2 = iter_builder2()
     while True:
         try:
-            x = it1.next()
+            x = it1.__next__()
             yield x
         except (StopIteration, RuntimeError):
             it1 = iter_builder1()
         try:
-            x = it2.next()
+            x = it2.__next__()
             yield x
         except (StopIteration, RuntimeError):
             it2 = iter_builder2()
 
 
-def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclude_regex=None):
+def StartSyncClient(server_addr, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclude_regex=None):
     pat_include = map(lambda r: re.compile(r), include_regex) if include_regex else None
     pat_exclude = map(lambda r: re.compile(r), exclude_regex) if exclude_regex else None
     def skip_file(filename):
@@ -198,7 +193,6 @@ def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclu
                     skip = True
         return skip
 
-    addr = "localhost:%d" % port
     files_attr = {}
 
     def handle_file(filename):
@@ -216,21 +210,21 @@ def StartSyncClient(port, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclu
             client_first_look = True
         files_attr[filename]["mtime"] = mtime
         if client_first_look:
-            js = ClientRequestFileTime(addr, filename)
+            js = ClientRequestFileTime(server_addr, filename)
             j = json.loads(js)
             fts = j.get("files",[{}])[0].get("fts",0)
             if fts >= mtime:
                 # server already updated from previous run of client
                 # no need to upload
                 return False, mtime
-        ClientUploadFile(addr, full, filename, mtime)
+        ClientUploadFile(server_addr, full, filename, mtime)
         return True, mtime
 
     log_count = 0
     speed = 1.0
     recently_changed = {}
     for filename in iter_merge_infinite_loop(lambda : IterRelativePath(root_dir),
-                                             lambda: iter(recently_changed.viewkeys())):
+                                             lambda: iter(recently_changed.keys())):
         if skip_file(filename):
             continue
         time.sleep(0.1 * speed)
@@ -266,11 +260,18 @@ def main():
                     help='regex of files to exclude from sync (can give several)',
                     default=[r"^\."],
                     action='append')
+    parser.add_argument('--server',
+                    help='server adrressconnect to connect --server : --port', default="127.0.0.1")
+
     args = parser.parse_args()
     if args.destination:
-        StartSyncServer("", args.port, args.dir)
+        addr = args.server
+        if addr == "127.0.0.1":
+            addr = ""   # use for server default
+        StartSyncServer(addr, args.port, args.dir)
     elif args.source:
-        StartSyncClient(args.port, args.dir, args.rex_include, args.rex_exclude)
+        StartSyncClient("{}:{}".format(args.server, args.port),
+                        args.dir, args.rex_include, args.rex_exclude)
     else:
         print("ERROR - must specify either --source or --destination")
 
