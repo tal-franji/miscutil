@@ -17,6 +17,7 @@
 # [laptop]$ wget https://raw.githubusercontent.com/tal-franji/miscutil/master/dirsync.py
 # [laptop]$ python dirsync.py --source
 
+# Note - there is a tool https://www.tecmint.com/file-synchronization-in-linux-using-unison/
 __author__ = "tal.franji@gmail.com"
 
 import argparse
@@ -112,16 +113,16 @@ def StartSyncServer(addr, port, root_dir):
 
 
 
-def ClientRequestFileTime(addr, file):
+def ClientRequestFileTime(server_addr_port_tuple, file):
     params = urllib.parse.urlencode({"file": file, "fts": 0})
     headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
-    conn = http.client.HTTPConnection(addr)
+    conn = http.client.HTTPConnection(server_addr_port_tuple[0], port=server_addr_port_tuple[1])
     conn.request("GET", "/?" + params, None, headers)
     r = conn.getresponse()
     return r.read().decode('utf-8')
 
 
-def ClientUploadFile(addr, full, filename, mtime):
+def ClientUploadFile(server_addr_port_tuple, full, filename, mtime):
     content = None
     print("Uploading file: ", filename)
     try:
@@ -132,7 +133,7 @@ def ClientUploadFile(addr, full, filename, mtime):
             return
         params = urllib.parse.urlencode({"file": filename, "fts": mtime, "content": content})
         headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
-        conn = http.client.HTTPConnection(addr)
+        conn = http.client.HTTPConnection(server_addr_port_tuple[0], port=server_addr_port_tuple[1])
         conn.request("POST", "/", params,  headers)
         r = conn.getresponse()
         print("Upload response: ", r.status, r.reason)
@@ -178,9 +179,9 @@ def iter_merge_infinite_loop(iter_builder1, iter_builder2):
             it2 = iter_builder2()
 
 
-def StartSyncClient(server_addr, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclude_regex=None):
-    pat_include = map(lambda r: re.compile(r), include_regex) if include_regex else None
-    pat_exclude = map(lambda r: re.compile(r), exclude_regex) if exclude_regex else None
+def StartSyncClient(server_addr_port_tuple, root_dir, include_regex=[r".*\.(py|java|xml)$"], exclude_regex=["^\.git/"]):
+    pat_include = [re.compile(r) for r in  include_regex] if include_regex else None
+    pat_exclude = [re.compile(r) for r in exclude_regex] if exclude_regex else None
     def skip_file(filename):
         skip = True
         if pat_include:
@@ -210,14 +211,14 @@ def StartSyncClient(server_addr, root_dir, include_regex=[r".*\.(py|java|xml)$"]
             client_first_look = True
         files_attr[filename]["mtime"] = mtime
         if client_first_look:
-            js = ClientRequestFileTime(server_addr, filename)
+            js = ClientRequestFileTime(server_addr_port_tuple, filename)
             j = json.loads(js)
             fts = j.get("files",[{}])[0].get("fts",0)
             if fts >= mtime:
                 # server already updated from previous run of client
                 # no need to upload
                 return False, mtime
-        ClientUploadFile(server_addr, full, filename, mtime)
+        ClientUploadFile(server_addr_port_tuple, full, filename, mtime)
         return True, mtime
 
     log_count = 0
@@ -231,11 +232,13 @@ def StartSyncClient(server_addr, root_dir, include_regex=[r".*\.(py|java|xml)$"]
         speed = min(max(speed * 1.05, 0), 1.0)
         log_count += 1
         if log_count >= 50:
+            # dilute the log by X50 to preven too much output
             print("Checking file ", filename)
             log_count = 0
         updated, mtime = handle_file(filename)
         if updated:
             recently_changed[filename] = mtime
+            # if updated - accelerate
             speed /= 2.0
         else:
             # check if need to remove from recently changed
@@ -264,13 +267,18 @@ def main():
                     help='server adrressconnect to connect --server : --port', default="127.0.0.1")
 
     args = parser.parse_args()
+    server = args.server
+    if server.startswith("http"):
+        # allow pasing grok url as server name - remove the rest
+        server = re.sub(r"^http(s)?://", "", server)
+        server = re.sub(r"/?$", "", server)
     if args.destination:
-        addr = args.server
+        addr = server
         if addr == "127.0.0.1":
             addr = ""   # use for server default
         StartSyncServer(addr, args.port, args.dir)
     elif args.source:
-        StartSyncClient("{}:{}".format(args.server, args.port),
+        StartSyncClient((server, args.port),
                         args.dir, args.rex_include, args.rex_exclude)
     else:
         print("ERROR - must specify either --source or --destination")
