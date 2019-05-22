@@ -195,14 +195,23 @@ def StartSyncClient(server_addr_port_tuple, root_dir, include_regex=[r".*\.(py|j
         return skip
 
     files_attr = {}
+    last_server_call = 0
 
     def handle_file(filename):
         # return True, mtime if file needed upload
         # return False if not
+        nonlocal files_attr, last_server_call
+        now = int(time.time())
+        force_server_check = (now - last_server_call) > 30  # call server at least every 30 seconds to keep alive
+        if force_server_check:
+            print("Hello, server.")
         full = os.path.join(root_dir, filename)
+        if not os.path.exists(full):
+            #file may have been deleted
+            return False, now  # just ignore - not handling deletes
         mtime = os.path.getmtime(full)
         client_first_look = False
-        if filename in files_attr:
+        if filename in files_attr and not force_server_check:
             last_mtime = files_attr[filename]["mtime"]
             if mtime <= last_mtime:
                 return False, mtime
@@ -212,8 +221,12 @@ def StartSyncClient(server_addr_port_tuple, root_dir, include_regex=[r".*\.(py|j
         files_attr[filename]["mtime"] = mtime
         if client_first_look:
             js = ClientRequestFileTime(server_addr_port_tuple, filename)
+            if not js.strip().startswith("{"):
+                print("ERROR - bad server response. Is link/tunnel down?\n", js)
+                exit(3)
             j = json.loads(js)
             fts = j.get("files",[{}])[0].get("fts",0)
+            last_server_call = now
             if fts >= mtime:
                 # server already updated from previous run of client
                 # no need to upload
