@@ -258,16 +258,80 @@ def StartSyncClient(server_addr_port_tuple, root_dir, include_regex=[r".*\.(py|j
             if filename in recently_changed and time.time() - mtime > 5 * 60:
                 del recently_changed[filename]
 
+def client_main(args):
+    server = args.server
+    default_port = 8000
+    if server.startswith("http"):
+        # allow pasing grok url as server name - remove the rest
+        server = re.sub(r"^http(s)?://", "", server)
+        server = re.sub(r"/?$", "", server)
+        default_port = 80
+    if not args.port:
+        args.port = default_port  # for http assume
 
+    #if args.ngrok:
+        # ignore the ngrok value - it is not needed in the client
+        #pass
+    StartSyncClient((server, args.port),
+                        args.dir, args.rex_include, args.rex_exclude)
+
+
+def server_main(args):
+    server = args.server
+    addr = server
+    if addr == "127.0.0.1":
+        addr = ""   # use for server default
+    StartSyncServer(addr, args.port, args.dir)
+
+
+def ipython_sync_via_ngrok(extra_apps=[]):
+    import re
+    import json
+    all_apps = set(extra_apps + ['dirsync', 'ngrok'])
+    ps_result = get_ipython().getoutput('ps x', split=True)
+    ps = [re.split(r'\s+', s, maxsplit=5)[5] for s in ps_result if s]
+    app_command = [
+        ('tensorboard', 'tensorboard --logdir=/content/log/fit --host 0.0.0.0 --port 6006 &'),
+        ('dirsync', 'python3 dirsync.py --destination --dir . --port 8000 &'),
+        ('ngrok', './ngrok start -config=./ngrok.yml dirsync  &'),
+    ]
+    for app, cmd in app_command:
+        if not app in all_apps:
+            continue
+        for s in ps:
+            if app in s:
+                break
+        else:
+            print("Running : ", cmd)
+            get_ipython().system_raw(cmd)
+            ###OLD: get_ipython().system_raw('./ngrok http -inspect=false 6006 &')
+    ngrok_result = json.loads(str(get_ipython().getoutput('curl -s http://localhost:4040/api/tunnels', split=False)))
+    #print(ngrok_result)
+    dir_sync_url = None
+    for t in ngrok_result['tunnels']:
+        name = t['name']
+        if "dirsync" in name:
+            if dir_sync_url is None or "(http)" in name:
+                # take first or the http one (not https)
+                dir_sync_url = t['public_url']
+        #print(name, t['public_url'])
+    print("""
+    #### ON LAPTOP RUN:
+    python dirsync.py --source  --dir . --rex_include "^.*\\.(ini|py)$" --server {}
+    #### THIS syncs your laptop current directory with the notebook VM (all .py files)
+    """.format(dir_sync_url))
+
+def xor(a, b):
+    return (not a and b) or (a and not b)
 
 def main():
     parser = argparse.ArgumentParser(description='File Sync server')
     parser.add_argument('--port', type=int,
-                    help='Port server listens to', default=8000)
+                    help='Port server listens to')
     parser.add_argument('--dir',
                     help='root directory from which to read (--source)/ write (--destination)', default=".")
-    parser.add_argument('--source', action='store_true', help="Run this on the source of the files to sync")
-    parser.add_argument('--destination', action='store_true', help="Run this on the destination machine")
+    parser.add_argument('--source', action='store_true', help="Run this on the source of the files to sync (e.g. laptop)")
+    parser.add_argument('--destination', action='store_true', help="Run this on the destination machine (e.g. cloud machine)")
     parser.add_argument('--rex_include',
                     help='regex of files to include in sync (can give several)',
                     default=[r".*\.(py|java|xml|scala)$"],
@@ -277,25 +341,17 @@ def main():
                     default=[r"^\."],
                     action='append')
     parser.add_argument('--server',
-                    help='server adrressconnect to connect --server : --port', default="127.0.0.1")
+                    help='server address to connect --server : --port', default="127.0.0.1")
+    #parser.add_argument('--ngrok',
+    #                help='if using ngrok token (for Google colab) - your ngrok authtoken')
+
 
     args = parser.parse_args()
-    server = args.server
-    if server.startswith("http"):
-        # allow pasing grok url as server name - remove the rest
-        server = re.sub(r"^http(s)?://", "", server)
-        server = re.sub(r"/?$", "", server)
-    if args.destination:
-        addr = server
-        if addr == "127.0.0.1":
-            addr = ""   # use for server default
-        StartSyncServer(addr, args.port, args.dir)
-    elif args.source:
-        StartSyncClient((server, args.port),
-                        args.dir, args.rex_include, args.rex_exclude)
+    is_client = args.source
+    if is_client:
+        client_main(args)
     else:
-        print("ERROR - must specify either --source or --destination")
-
+        server_main(args)
     return 0
 
 
